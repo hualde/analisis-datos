@@ -39,6 +39,14 @@ jobs:
         run: npm run build
         working-directory: dashboard-web
 
+      - name: Verify dist
+        run: |
+          ls -la dashboard-web/dist
+          test -f dashboard-web/dist/index.html
+
+      - name: Add nojekyll
+        run: touch dashboard-web/dist/.nojekyll
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
