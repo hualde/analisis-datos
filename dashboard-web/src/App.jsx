@@ -12,6 +12,9 @@ const getCurrentMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
+const ALL_MONTHS_KEY = "ALL";
+const ALL_MONTHS_LABEL = "Todos";
+
 const getBaseUrl = () => {
   const envBase = import.meta?.env?.BASE_URL;
   let basePath = "/";
@@ -67,7 +70,7 @@ export default function App() {
         const safeManifest = manifest && typeof manifest === "object" ? manifest : {};
         setRepoManifest(safeManifest);
         const months = Object.keys(safeManifest).sort();
-        setRepoMonths(months);
+        setRepoMonths([ALL_MONTHS_KEY, ...months]);
         if (months.length > 0) {
           const latest = months[months.length - 1];
           setSelectedMonth(latest);
@@ -141,6 +144,10 @@ export default function App() {
   };
 
   const loadMonthFromRepo = async (monthKey, manifest = repoManifest) => {
+    if (monthKey === ALL_MONTHS_KEY) {
+      await loadAllMonthsFromRepo(manifest);
+      return;
+    }
     const filePath = manifest[monthKey];
     if (!filePath) {
       setDataState(null);
@@ -165,9 +172,58 @@ export default function App() {
     }
   };
 
+  const loadAllMonthsFromRepo = async (manifest = repoManifest) => {
+    const months = Object.keys(manifest).sort();
+    if (months.length === 0) {
+      setDataState(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const baseUrl = getBaseUrl();
+      const results = await Promise.all(
+        months.map(async (m) => {
+          const filePath = manifest[m];
+          if (!filePath) return null;
+          const normalized = new URL(filePath, baseUrl).toString();
+          const res = await fetch(normalized, { cache: "no-store" });
+          if (!res.ok) throw new Error(`No se pudo cargar el Excel del repo: ${m}`);
+          const buffer = await res.arrayBuffer();
+          return processExcelArrayBuffer(buffer);
+        })
+      );
+      const validResults = results.filter(Boolean);
+      const combinedData = validResults.flatMap(r => r.data);
+      const totals = validResults.reduce(
+        (acc, curr) => ({
+          totalRechazo: acc.totalRechazo + curr.totalRechazo,
+          totalCascos: acc.totalCascos + curr.totalCascos,
+          totalUdsRechazo: acc.totalUdsRechazo + curr.totalUdsRechazo,
+        }),
+        { totalRechazo: 0, totalCascos: 0, totalUdsRechazo: 0 }
+      );
+      setDataState({
+        data: combinedData,
+        avgRate: 23.35,
+        ...totals,
+      });
+      setSelectedFamilies([]);
+    } catch (error) {
+      console.error("Error loading repo Excel (all months)", error);
+      alert("No se pudieron cargar los Excels del repo. Revisa el manifest y las rutas.");
+      setDataState(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleMonthChange = (value) => {
     const monthKey = value || getCurrentMonth();
     setSelectedMonth(monthKey);
+    if (monthKey === ALL_MONTHS_KEY) {
+      loadMonthFromRepo(monthKey);
+      return;
+    }
     if (repoManifest[monthKey]) {
       loadMonthFromRepo(monthKey);
     } else {
@@ -197,7 +253,7 @@ export default function App() {
             >
               {repoMonths.length === 0 && <option value={selectedMonth}>Sin meses en manifest</option>}
               {repoMonths.map(m => (
-                <option key={m} value={m}>{m}</option>
+                <option key={m} value={m}>{m === ALL_MONTHS_KEY ? ALL_MONTHS_LABEL : m}</option>
               ))}
             </select>
             <div className="text-[11px] text-gray-500 mt-2">
@@ -258,7 +314,7 @@ export default function App() {
           >
             {repoMonths.length === 0 && <option value={selectedMonth}>Sin meses</option>}
             {repoMonths.map(m => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>{m === ALL_MONTHS_KEY ? ALL_MONTHS_LABEL : m}</option>
             ))}
           </select>
           <button
