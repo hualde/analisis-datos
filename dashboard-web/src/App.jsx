@@ -13,8 +13,17 @@ const getCurrentMonth = () => {
 };
 
 const getBaseUrl = () => {
-  const base = import.meta?.env?.BASE_URL || "/";
-  return base.endsWith("/") ? base : `${base}/`;
+  const envBase = import.meta?.env?.BASE_URL;
+  if (envBase && envBase !== "/") {
+    return envBase.endsWith("/") ? envBase : `${envBase}/`;
+  }
+  if (typeof window !== "undefined") {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      return `/${parts[0]}/`;
+    }
+  }
+  return "/";
 };
 
 const CustomTooltip = ({ active, payload }) => {
@@ -41,13 +50,15 @@ export default function App() {
   const [repoManifest, setRepoManifest] = useState({});
   const [repoMonths, setRepoMonths] = useState([]);
   const [loadingRepo, setLoadingRepo] = useState(false);
+  const [repoError, setRepoError] = useState("");
 
-  useEffect(() => {
-    const loadManifest = async () => {
+  const loadManifest = async () => {
       setLoadingRepo(true);
+    setRepoError("");
       try {
         const baseUrl = getBaseUrl();
-        const res = await fetch(`${baseUrl}excels/manifest.json`, { cache: "no-store" });
+      const manifestUrl = `${baseUrl}excels/manifest.json`;
+      const res = await fetch(manifestUrl, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar manifest.json");
         const manifest = await res.json();
         const safeManifest = manifest && typeof manifest === "object" ? manifest : {};
@@ -61,11 +72,13 @@ export default function App() {
         }
       } catch (error) {
         console.warn("No se pudo cargar el manifest del repo", error);
+      setRepoError("No se pudo cargar el manifest del repo.");
       } finally {
         setLoadingRepo(false);
       }
     };
 
+  useEffect(() => {
     loadManifest();
   }, []);
 
@@ -187,6 +200,16 @@ export default function App() {
             <div className="text-[11px] text-gray-500 mt-2">
               {loadingRepo ? "Cargando manifest..." : "Carga desde /excels/manifest.json"}
             </div>
+            {repoError && (
+              <div className="text-[11px] text-red-400 mt-1">{repoError}</div>
+            )}
+            <button
+              type="button"
+              onClick={loadManifest}
+              className="mt-3 text-xs text-blue-400 hover:text-blue-300"
+            >
+              Recargar manifest
+            </button>
           </div>
 
           <label className="btn-primary block w-full py-4 text-center text-lg cursor-pointer">
