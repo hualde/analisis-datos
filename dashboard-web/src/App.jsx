@@ -41,7 +41,7 @@ const CustomTooltip = ({ active, payload }) => {
       <div style={{ color: COLORS.blanco, fontWeight: 700, marginBottom: 4, fontFamily: "monospace" }}>{d.articulo}</div>
       <div style={{ color: COLORS.gris }}>Cascos: <b style={{ color: COLORS.blanco }}>{d.cascos}</b></div>
       <div style={{ color: COLORS.gris }}>Tasa rechazo: <b style={{ color: seg.color || COLORS.blanco }}>{Number(d.tasa_pct).toFixed(1)}%</b></div>
-      <div style={{ color: COLORS.gris }}>Valor rechazo: <b style={{ color: COLORS.blanco }}>{d.valor_rechazo}€</b></div>
+      <div style={{ color: COLORS.gris }}>Valor rechazo: <b style={{ color: COLORS.blanco }}>{Number(d.valor_rechazo).toFixed(2)}€</b></div>
       <div style={{ marginTop: 4, color: seg.color || COLORS.gris, fontSize: 11 }}>{seg.emoji} {d.riesgo}</div>
     </div>
   );
