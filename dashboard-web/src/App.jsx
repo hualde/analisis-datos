@@ -14,16 +14,19 @@ const getCurrentMonth = () => {
 
 const getBaseUrl = () => {
   const envBase = import.meta?.env?.BASE_URL;
+  let basePath = "/";
   if (envBase && envBase !== "/") {
-    return envBase.endsWith("/") ? envBase : `${envBase}/`;
-  }
-  if (typeof window !== "undefined") {
+    basePath = envBase.endsWith("/") ? envBase : `${envBase}/`;
+  } else if (typeof window !== "undefined") {
     const parts = window.location.pathname.split("/").filter(Boolean);
     if (parts.length > 0) {
-      return `/${parts[0]}/`;
+      basePath = `/${parts[0]}/`;
     }
   }
-  return "/";
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${basePath}`;
+  }
+  return basePath;
 };
 
 const CustomTooltip = ({ active, payload }) => {
@@ -498,3 +501,4 @@ export default function App() {
     </div>
   );
 }
+
