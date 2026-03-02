@@ -12,6 +12,11 @@ const getCurrentMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
+const getBaseUrl = () => {
+  const base = import.meta?.env?.BASE_URL || "/";
+  return base.endsWith("/") ? base : `${base}/`;
+};
+
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -41,7 +46,8 @@ export default function App() {
     const loadManifest = async () => {
       setLoadingRepo(true);
       try {
-        const res = await fetch("/excels/manifest.json", { cache: "no-store" });
+        const baseUrl = getBaseUrl();
+        const res = await fetch(`${baseUrl}excels/manifest.json`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar manifest.json");
         const manifest = await res.json();
         const safeManifest = manifest && typeof manifest === "object" ? manifest : {};
@@ -126,7 +132,8 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const normalized = filePath.startsWith("/") ? filePath : `/${filePath}`;
+      const baseUrl = getBaseUrl();
+      const normalized = new URL(filePath, baseUrl).toString();
       const res = await fetch(normalized, { cache: "no-store" });
       if (!res.ok) throw new Error("No se pudo cargar el Excel del repo");
       const buffer = await res.arrayBuffer();
