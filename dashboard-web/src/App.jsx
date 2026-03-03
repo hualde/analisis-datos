@@ -39,12 +39,30 @@ const CustomTooltip = ({ active, payload }) => {
   return (
     <div style={{ background: "#1a2a3a", border: `1px solid ${COLORS.borde}`, borderRadius: 8, padding: "10px 14px", fontSize: 12 }}>
       <div style={{ color: COLORS.blanco, fontWeight: 700, marginBottom: 4, fontFamily: "monospace" }}>{d.articulo}</div>
+      {d.blacklisted && (
+        <div style={{ color: COLORS.critico, fontWeight: 700, marginBottom: 4 }}>
+          Lista negra
+        </div>
+      )}
       <div style={{ color: COLORS.gris }}>Cascos: <b style={{ color: COLORS.blanco }}>{d.cascos}</b></div>
       <div style={{ color: COLORS.gris }}>Tasa rechazo: <b style={{ color: seg.color || COLORS.blanco }}>{Number(d.tasa_pct).toFixed(1)}%</b></div>
       <div style={{ color: COLORS.gris }}>Valor rechazo: <b style={{ color: COLORS.blanco }}>{Number(d.valor_rechazo).toFixed(2)}€</b></div>
       <div style={{ marginTop: 4, color: seg.color || COLORS.gris, fontSize: 11 }}>{seg.emoji} {d.riesgo}</div>
     </div>
   );
+};
+
+const normalizeRef = (value) => String(value || "").trim().toUpperCase();
+
+const extractBlacklistRefs = (json) => {
+  if (Array.isArray(json)) return json;
+  if (json && typeof json === "object") {
+    const keys = ["blacklist", "listaNegra", "refs", "referencias"];
+    for (const key of keys) {
+      if (Array.isArray(json[key])) return json[key];
+    }
+  }
+  return [];
 };
 
 export default function App() {
@@ -57,6 +75,10 @@ export default function App() {
   const [repoMonths, setRepoMonths] = useState([]);
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [repoError, setRepoError] = useState("");
+  const [blacklistSet, setBlacklistSet] = useState(new Set());
+  const [blacklistName, setBlacklistName] = useState("");
+  const [blacklistError, setBlacklistError] = useState("");
+  const [onlyBlacklist, setOnlyBlacklist] = useState(false);
 
   const loadManifest = async () => {
       setLoadingRepo(true);
@@ -90,14 +112,29 @@ export default function App() {
 
   const { data: rawData } = dataState || { data: [] };
 
+  const dataWithBlacklist = useMemo(() => {
+    if (!rawData.length) return [];
+    if (!blacklistSet || blacklistSet.size === 0) return rawData;
+    return rawData.map((d) => ({
+      ...d,
+      blacklisted: blacklistSet.has(normalizeRef(d.articulo)),
+    }));
+  }, [rawData, blacklistSet]);
+
   const allFamilies = useMemo(() => {
-    return [...new Set(rawData.map(d => d.familia))].filter(Boolean).sort();
-  }, [rawData]);
+    return [...new Set(dataWithBlacklist.map(d => d.familia))].filter(Boolean).sort();
+  }, [dataWithBlacklist]);
 
   const filteredData = useMemo(() => {
-    if (selectedFamilies.length === 0) return rawData;
-    return rawData.filter(d => selectedFamilies.includes(d.familia));
-  }, [rawData, selectedFamilies]);
+    let result = dataWithBlacklist;
+    if (selectedFamilies.length > 0) {
+      result = result.filter(d => selectedFamilies.includes(d.familia));
+    }
+    if (onlyBlacklist) {
+      result = result.filter(d => d.blacklisted);
+    }
+    return result;
+  }, [dataWithBlacklist, selectedFamilies, onlyBlacklist]);
 
   const totals = useMemo(() => {
     return {
@@ -140,6 +177,32 @@ export default function App() {
       alert("Error al procesar el archivo Excel. Asegúrate de que el formato sea correcto.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBlacklistUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setBlacklistError("");
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const refs = extractBlacklistRefs(json)
+        .map(normalizeRef)
+        .filter(Boolean);
+      if (refs.length === 0) {
+        setBlacklistSet(new Set());
+        setBlacklistName(file.name);
+        setBlacklistError("El JSON no contiene referencias válidas.");
+        return;
+      }
+      setBlacklistSet(new Set(refs));
+      setBlacklistName(file.name);
+    } catch (error) {
+      console.error("Error parsing blacklist JSON", error);
+      setBlacklistError("No se pudo leer el JSON de lista negra.");
+      setBlacklistSet(new Set());
+      setBlacklistName("");
     }
   };
 
@@ -363,6 +426,29 @@ export default function App() {
             </button>
           )}
         </div>
+        <div className="flex items-center gap-3 ml-auto flex-wrap">
+          <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Lista negra:</label>
+          <label className="text-[11px] px-3 py-2 rounded-lg border border-gray-700/50 bg-gray-900/50 text-gray-300 cursor-pointer">
+            {blacklistName ? "Cambiar JSON" : "Cargar JSON"}
+            <input type="file" className="hidden" accept=".json,application/json" onChange={handleBlacklistUpload} />
+          </label>
+          <button
+            type="button"
+            onClick={() => setOnlyBlacklist(prev => !prev)}
+            disabled={blacklistSet.size === 0}
+            className={`text-[11px] px-3 py-2 rounded-lg border transition-colors ${onlyBlacklist
+              ? "border-red-500/60 text-red-300 bg-red-500/10"
+              : "border-gray-700/50 text-gray-400 bg-gray-900/40"} ${blacklistSet.size === 0 ? "opacity-50 cursor-not-allowed" : "hover:text-white"}`}
+          >
+            Solo lista negra
+          </button>
+          <div className="text-[11px] text-gray-500">
+            {blacklistSet.size > 0 ? `${blacklistSet.size} refs marcadas` : "Sin lista cargada"}
+          </div>
+          {blacklistError && (
+            <div className="text-[11px] text-red-400">{blacklistError}</div>
+          )}
+        </div>
       </div>
 
       {/* KPIs */}
@@ -408,6 +494,10 @@ export default function App() {
                   {name}
                 </div>
               ))}
+              <div className="flex items-center gap-2 text-xs font-medium text-red-300">
+                <span className="inline-block w-3 h-3 rounded-full border-2 border-red-400" />
+                Lista negra
+              </div>
             </div>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -441,7 +531,15 @@ export default function App() {
                     shape={(props) => {
                       const { cx, cy, payload } = props;
                       const r = Math.max(4, Math.min(24, Math.pow(payload.valor_rechazo, 0.5) * 0.4));
-                      return <circle cx={cx} cy={cy} r={r} fill={SEGMENTOS[segName].color} fillOpacity={0.6} stroke={SEGMENTOS[segName].color} strokeWidth={1} />;
+                      const fill = SEGMENTOS[segName].color;
+                      return (
+                        <g>
+                          <circle cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.6} stroke={fill} strokeWidth={1} />
+                          {payload.blacklisted && (
+                            <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={COLORS.critico} strokeWidth={2} />
+                          )}
+                        </g>
+                      );
                     }}
                   />
                 ))}
@@ -530,7 +628,16 @@ export default function App() {
               <tbody className="text-sm">
                 {filteredData.sort((a, b) => b.valor_rechazo - a.valor_rechazo).slice(0, 50).map((row, i) => (
                   <tr key={i} className="border-b border-gray-800/30 hover:bg-white/5 transition-colors">
-                    <td className="py-4 px-4 font-mono font-bold text-white">{row.articulo}</td>
+                    <td className="py-4 px-4 font-mono font-bold text-white">
+                      <div className="flex items-center gap-2">
+                        <span>{row.articulo}</span>
+                        {row.blacklisted && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-red-500/60 text-red-300 bg-red-500/10">
+                            LISTA NEGRA
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-4 px-4 text-gray-400 text-xs">{row.familia}</td>
                     <td className="py-4 px-4">
                       <span
