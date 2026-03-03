@@ -76,8 +76,6 @@ export default function App() {
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [repoError, setRepoError] = useState("");
   const [blacklistSet, setBlacklistSet] = useState(new Set());
-  const [blacklistName, setBlacklistName] = useState("");
-  const [blacklistError, setBlacklistError] = useState("");
   const [onlyBlacklist, setOnlyBlacklist] = useState(false);
 
   const loadManifest = async () => {
@@ -108,6 +106,25 @@ export default function App() {
 
   useEffect(() => {
     loadManifest();
+  }, []);
+
+  useEffect(() => {
+    const loadBlacklist = async () => {
+      try {
+        const baseUrl = getBaseUrl();
+        const res = await fetch(`${baseUrl}lista-negra.json`, { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo cargar lista-negra.json");
+        const json = await res.json();
+        const refs = extractBlacklistRefs(json)
+          .map(normalizeRef)
+          .filter(Boolean);
+        setBlacklistSet(new Set(refs));
+      } catch (error) {
+        console.warn("No se pudo cargar la lista negra", error);
+        setBlacklistSet(new Set());
+      }
+    };
+    loadBlacklist();
   }, []);
 
   const { data: rawData } = dataState || { data: [] };
@@ -177,32 +194,6 @@ export default function App() {
       alert("Error al procesar el archivo Excel. Asegúrate de que el formato sea correcto.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBlacklistUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    setBlacklistError("");
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-      const refs = extractBlacklistRefs(json)
-        .map(normalizeRef)
-        .filter(Boolean);
-      if (refs.length === 0) {
-        setBlacklistSet(new Set());
-        setBlacklistName(file.name);
-        setBlacklistError("El JSON no contiene referencias válidas.");
-        return;
-      }
-      setBlacklistSet(new Set(refs));
-      setBlacklistName(file.name);
-    } catch (error) {
-      console.error("Error parsing blacklist JSON", error);
-      setBlacklistError("No se pudo leer el JSON de lista negra.");
-      setBlacklistSet(new Set());
-      setBlacklistName("");
     }
   };
 
@@ -428,10 +419,6 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3 ml-auto flex-wrap">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Lista negra:</label>
-          <label className="text-[11px] px-3 py-2 rounded-lg border border-gray-700/50 bg-gray-900/50 text-gray-300 cursor-pointer">
-            {blacklistName ? "Cambiar JSON" : "Cargar JSON"}
-            <input type="file" className="hidden" accept=".json,application/json" onChange={handleBlacklistUpload} />
-          </label>
           <button
             type="button"
             onClick={() => setOnlyBlacklist(prev => !prev)}
@@ -445,9 +432,6 @@ export default function App() {
           <div className="text-[11px] text-gray-500">
             {blacklistSet.size > 0 ? `${blacklistSet.size} refs marcadas` : "Sin lista cargada"}
           </div>
-          {blacklistError && (
-            <div className="text-[11px] text-red-400">{blacklistError}</div>
-          )}
         </div>
       </div>
 
