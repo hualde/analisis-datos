@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Legend
 } from "recharts";
 import { Upload, FileSpreadsheet, CheckCircle2, TrendingUp, AlertTriangle, FileText, ChevronRight, Filter } from "lucide-react";
-import { processExcelData, processExcelArrayBuffer, COLORS, SEGMENTOS, TRAMO_COLORS } from "./utils";
+import { processExcelData, processExcelArrayBuffer, COLORS, SEGMENTOS, TRAMO_COLORS, getFamily } from "./utils";
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -63,6 +63,72 @@ const extractBlacklistRefs = (json) => {
     }
   }
   return [];
+};
+
+const avgRate = 23.35;
+
+const applyDerivedFields = (row) => {
+  const next = { ...row };
+  if (next.cascos <= 5 && next.tasa_pct > 50) {
+    next.riesgo = "Crítico (≤5 cascos, >50%)";
+  } else if (next.cascos <= 20 && next.tasa_pct > avgRate) {
+    next.riesgo = "Baja prod, alto rechazo";
+  } else if (next.cascos > 20 && next.tasa_pct > avgRate) {
+    next.riesgo = "Alta prod, alto rechazo";
+  } else {
+    next.riesgo = "Bajo rechazo";
+  }
+
+  if (next.cascos <= 5) next.tramo = "1-5 cascos";
+  else if (next.cascos <= 10) next.tramo = "6-10 cascos";
+  else if (next.cascos <= 20) next.tramo = "11-20 cascos";
+  else if (next.cascos <= 50) next.tramo = "21-50 cascos";
+  else next.tramo = ">50 cascos";
+
+  next.familia = getFamily(next.articulo);
+  return next;
+};
+
+const aggregateByReferencia = (rows) => {
+  const byRef = new Map();
+  rows.forEach((row) => {
+    const key = normalizeRef(row.articulo);
+    if (!key) return;
+    if (!byRef.has(key)) {
+      byRef.set(key, {
+        articulo: row.articulo,
+        cascos: 0,
+        rechazo_uds: 0,
+        valor_rechazo: 0,
+        devueltos: 0,
+        tasa_sum: 0,
+        tasa_count: 0,
+      });
+    }
+    const acc = byRef.get(key);
+    acc.cascos += row.cascos || 0;
+    acc.rechazo_uds += row.rechazo_uds || 0;
+    acc.valor_rechazo += row.valor_rechazo || 0;
+    acc.devueltos += row.devueltos || 0;
+    if (typeof row.tasa_pct === "number") {
+      acc.tasa_sum += row.tasa_pct;
+      acc.tasa_count += 1;
+    }
+  });
+
+  return Array.from(byRef.values())
+    .map((row) => {
+      const tasa = row.tasa_count > 0 ? row.tasa_sum / row.tasa_count : 0;
+      return applyDerivedFields({
+        articulo: row.articulo,
+        cascos: row.cascos,
+        rechazo_uds: row.rechazo_uds,
+        valor_rechazo: row.valor_rechazo,
+        devueltos: row.devueltos,
+        tasa_pct: tasa,
+      });
+    })
+    .filter((d) => d.cascos > 0 && d.articulo !== "" && d.articulo !== "0");
 };
 
 export default function App() {
@@ -248,6 +314,7 @@ export default function App() {
       );
       const validResults = results.filter(Boolean);
       const combinedData = validResults.flatMap(r => r.data);
+      const aggregatedData = aggregateByReferencia(combinedData);
       const totals = validResults.reduce(
         (acc, curr) => ({
           totalRechazo: acc.totalRechazo + curr.totalRechazo,
@@ -257,8 +324,8 @@ export default function App() {
         { totalRechazo: 0, totalCascos: 0, totalUdsRechazo: 0 }
       );
       setDataState({
-        data: combinedData,
-        avgRate: 23.35,
+        data: aggregatedData,
+        avgRate,
         ...totals,
       });
       setSelectedFamilies([]);
