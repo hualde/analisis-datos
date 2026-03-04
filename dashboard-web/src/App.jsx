@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { Upload, FileSpreadsheet, CheckCircle2, TrendingUp, AlertTriangle, FileText, ChevronRight, Filter, Copy } from "lucide-react";
 import { processExcelData, processExcelArrayBuffer, COLORS, SEGMENTOS, TRAMO_COLORS, getFamily } from "./utils";
-import html2canvas from "html2canvas";
+import { toPng } from "html-to-image";
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -133,27 +133,25 @@ const aggregateByReferencia = (rows) => {
 };
 
 const copyElementToClipboard = async (element, fileName = "grafica") => {
-  if (!element) return false;
+  if (!element) return "error";
   try {
-    const canvas = await html2canvas(element, {
+    const dataUrl = await toPng(element, {
+      cacheBust: true,
       backgroundColor: COLORS.fondo,
-      scale: 2,
-      useCORS: true,
-      ignoreElements: (el) => el?.dataset?.captureIgnore === "true",
+      filter: (node) => node?.dataset?.captureIgnore !== "true",
     });
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const blob = await (await fetch(dataUrl)).blob();
     if (!blob) throw new Error("No se pudo generar la imagen");
     if (navigator.clipboard && window.ClipboardItem) {
       await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
       return "copied";
     }
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    link.href = dataUrl;
     link.download = `${fileName}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
     return "downloaded";
   } catch (error) {
     console.warn("No se pudo copiar la grafica", error);
@@ -647,7 +645,8 @@ export default function App() {
                     fill={SEGMENTOS[segName].color}
                     shape={(props) => {
                       const { cx, cy, payload } = props;
-                      const r = Math.max(4, Math.min(24, Math.pow(payload.valor_rechazo, 0.5) * 0.4));
+                      const valor = Number(payload?.valor_rechazo) || 0;
+                      const r = Math.max(4, Math.min(24, Math.sqrt(valor) * 0.4));
                       const fill = SEGMENTOS[segName].color;
                       return (
                         <g>
