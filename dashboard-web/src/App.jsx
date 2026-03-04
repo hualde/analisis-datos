@@ -132,10 +132,70 @@ const aggregateByReferencia = (rows) => {
     .filter((d) => d.cascos > 0 && d.articulo !== "" && d.articulo !== "0");
 };
 
+const normalizeOklchColors = (root) => {
+  const colorProps = [
+    "color",
+    "backgroundColor",
+    "borderTopColor",
+    "borderRightColor",
+    "borderBottomColor",
+    "borderLeftColor",
+    "outlineColor",
+    "textDecorationColor",
+    "fill",
+    "stroke",
+    "stopColor",
+  ];
+  const dummy = document.createElement("div");
+  dummy.style.position = "fixed";
+  dummy.style.left = "-99999px";
+  dummy.style.top = "-99999px";
+  document.body.appendChild(dummy);
+
+  const elements = [root, ...root.querySelectorAll("*")];
+  elements.forEach((el) => {
+    const computed = getComputedStyle(el);
+    colorProps.forEach((prop) => {
+      const val = computed[prop];
+      if (val && val.includes("oklch(")) {
+        dummy.style[prop] = val;
+        const normalized = getComputedStyle(dummy)[prop];
+        if (normalized && !normalized.includes("oklch(")) {
+          el.style[prop] = normalized;
+        }
+      }
+    });
+  });
+
+  document.body.removeChild(dummy);
+};
+
+const createCaptureNode = (element) => {
+  const rect = element.getBoundingClientRect();
+  const clone = element.cloneNode(true);
+  clone.style.width = `${Math.max(1, rect.width)}px`;
+  clone.style.height = `${Math.max(1, rect.height)}px`;
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-10000px";
+  wrapper.style.top = "0";
+  wrapper.style.width = `${Math.max(1, rect.width)}px`;
+  wrapper.style.height = `${Math.max(1, rect.height)}px`;
+  wrapper.style.background = COLORS.fondo;
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+  normalizeOklchColors(wrapper);
+  return { wrapper, node: clone };
+};
+
 const copyElementToClipboard = async (element, fileName = "grafica") => {
   if (!element) return "error";
+  let wrapper = null;
   try {
-    const dataUrl = await toPng(element, {
+    const capture = createCaptureNode(element);
+    wrapper = capture.wrapper;
+    const node = capture.node;
+    const dataUrl = await toPng(node, {
       cacheBust: true,
       backgroundColor: COLORS.fondo,
       filter: (node) => node?.dataset?.captureIgnore !== "true",
@@ -156,6 +216,10 @@ const copyElementToClipboard = async (element, fileName = "grafica") => {
   } catch (error) {
     console.warn("No se pudo copiar la grafica", error);
     return "error";
+  } finally {
+    if (wrapper && wrapper.parentNode) {
+      wrapper.parentNode.removeChild(wrapper);
+    }
   }
 };
 
