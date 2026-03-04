@@ -1,11 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell,
   PieChart, Pie, Legend
 } from "recharts";
-import { Upload, FileSpreadsheet, CheckCircle2, TrendingUp, AlertTriangle, FileText, ChevronRight, Filter } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle2, TrendingUp, AlertTriangle, FileText, ChevronRight, Filter, Copy } from "lucide-react";
 import { processExcelData, processExcelArrayBuffer, COLORS, SEGMENTOS, TRAMO_COLORS, getFamily } from "./utils";
+import html2canvas from "html2canvas";
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -131,6 +132,58 @@ const aggregateByReferencia = (rows) => {
     .filter((d) => d.cascos > 0 && d.articulo !== "" && d.articulo !== "0");
 };
 
+const copyElementToClipboard = async (element, fileName = "grafica") => {
+  if (!element) return false;
+  try {
+    const canvas = await html2canvas(element, {
+      backgroundColor: COLORS.fondo,
+      scale: 2,
+      useCORS: true,
+      ignoreElements: (el) => el?.dataset?.captureIgnore === "true",
+    });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("No se pudo generar la imagen");
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
+      return true;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${fileName}.png`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return true;
+  } catch (error) {
+    console.warn("No se pudo copiar la grafica", error);
+    return false;
+  }
+};
+
+const CopyButton = ({ targetRef, label }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleClick = async () => {
+    const ok = await copyElementToClipboard(targetRef?.current, label);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      data-capture-ignore="true"
+      className="absolute top-3 right-3 text-[11px] px-2 py-1 rounded-lg border border-gray-700/60 bg-gray-900/70 text-gray-300 hover:text-white hover:border-gray-600 transition-colors flex items-center gap-1"
+      title="Copiar grafica"
+    >
+      <Copy className="w-3.5 h-3.5" />
+      {copied ? "Copiado" : "Copiar"}
+    </button>
+  );
+};
+
 export default function App() {
   const [dataState, setDataState] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -143,6 +196,11 @@ export default function App() {
   const [repoError, setRepoError] = useState("");
   const [blacklistSet, setBlacklistSet] = useState(new Set());
   const [onlyBlacklist, setOnlyBlacklist] = useState(false);
+  const kpiRefs = useRef([]);
+  const scatterRef = useRef(null);
+  const barRef = useRef(null);
+  const pieRef = useRef(null);
+  const tableRef = useRef(null);
 
   const loadManifest = async () => {
       setLoadingRepo(true);
@@ -203,6 +261,13 @@ export default function App() {
       blacklisted: blacklistSet.has(normalizeRef(d.articulo)),
     }));
   }, [rawData, blacklistSet]);
+
+  const ensureKpiRef = (index) => {
+    if (!kpiRefs.current[index]) {
+      kpiRefs.current[index] = { current: null };
+    }
+    return kpiRefs.current[index];
+  };
 
   const allFamilies = useMemo(() => {
     return [...new Set(dataWithBlacklist.map(d => d.familia))].filter(Boolean).sort();
@@ -510,7 +575,13 @@ export default function App() {
           { label: "Tasa global", value: `${(totalUdsRechazo / totalCascos * 100).toFixed(2)}%`, sub: `${totalUdsRechazo.toLocaleString('es-ES')} uds rechazadas`, color: COLORS.rojo, icon: AlertTriangle },
           { label: "Refs críticas", value: criticas, sub: "≤5 cascos, >50% rechazo", color: COLORS.critico, icon: AlertTriangle },
         ].map((k, i) => (
-          <div key={i} className="glass-card p-6 relative overflow-hidden group">
+          <div key={i} className="glass-card p-6 relative overflow-hidden group"
+            ref={(el) => {
+              const refObj = ensureKpiRef(i);
+              refObj.current = el;
+            }}
+          >
+            <CopyButton targetRef={ensureKpiRef(i)} label={`kpi-${i + 1}`} />
             <div className="flex justify-between items-start mb-4">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{k.label}</span>
               <k.icon className="w-5 h-5 opacity-20 group-hover:opacity-100 transition-opacity" style={{ color: k.color }} />
@@ -535,9 +606,10 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div className="glass-card p-8">
+      <div className="glass-card p-8 relative">
         {tab === 0 && (
-          <div className="h-[500px] w-full">
+          <div className="h-[500px] w-full relative" ref={scatterRef}>
+            <CopyButton targetRef={scatterRef} label="scatter" />
             <div className="flex gap-6 mb-6">
               {Object.entries(SEGMENTOS).map(([name, seg]) => (
                 <div key={name} className="flex items-center gap-2 text-xs font-medium" style={{ color: seg.color }}>
@@ -601,7 +673,8 @@ export default function App() {
 
         {tab === 1 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            <div>
+            <div className="relative" ref={barRef}>
+              <CopyButton targetRef={barRef} label="tasa-media-tramo" />
               <h3 className="text-gray-400 text-sm font-bold uppercase tracking-wider mb-8">Tasa Media por Tramo</h3>
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -619,7 +692,8 @@ export default function App() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div>
+            <div className="relative" ref={pieRef}>
+              <CopyButton targetRef={pieRef} label="valor-rechazo-tramo" />
               <h3 className="text-gray-400 text-sm font-bold uppercase tracking-wider mb-8">Valor Rechazo por Tramo</h3>
               <div className="flex items-center">
                 {(() => {
@@ -664,7 +738,8 @@ export default function App() {
         )}
 
         {tab === 2 && (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto relative" ref={tableRef}>
+            <CopyButton targetRef={tableRef} label="tabla-detallada" />
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-800/50">
