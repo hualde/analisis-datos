@@ -145,29 +145,36 @@ const copyElementToClipboard = async (element, fileName = "grafica") => {
     if (!blob) throw new Error("No se pudo generar la imagen");
     if (navigator.clipboard && window.ClipboardItem) {
       await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
-      return true;
+      return "copied";
     }
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `${fileName}.png`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
-    return true;
+    return "downloaded";
   } catch (error) {
     console.warn("No se pudo copiar la grafica", error);
-    return false;
+    return "error";
   }
 };
 
 const CopyButton = ({ targetRef, label }) => {
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState("idle");
 
   const handleClick = async () => {
-    const ok = await copyElementToClipboard(targetRef?.current, label);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+    setStatus("idle");
+    const result = await copyElementToClipboard(targetRef?.current, label);
+    if (result === "copied") {
+      setStatus("copied");
+    } else if (result === "downloaded") {
+      setStatus("downloaded");
+    } else {
+      setStatus("error");
     }
+    setTimeout(() => setStatus("idle"), 1600);
   };
 
   return (
@@ -179,7 +186,7 @@ const CopyButton = ({ targetRef, label }) => {
       title="Copiar grafica"
     >
       <Copy className="w-3.5 h-3.5" />
-      {copied ? "Copiado" : "Copiar"}
+      {status === "copied" ? "Copiado" : status === "downloaded" ? "Descargado" : status === "error" ? "Error" : "Copiar"}
     </button>
   );
 };
@@ -196,7 +203,6 @@ export default function App() {
   const [repoError, setRepoError] = useState("");
   const [blacklistSet, setBlacklistSet] = useState(new Set());
   const [onlyBlacklist, setOnlyBlacklist] = useState(false);
-  const kpiRefs = useRef([]);
   const scatterRef = useRef(null);
   const barRef = useRef(null);
   const pieRef = useRef(null);
@@ -262,12 +268,6 @@ export default function App() {
     }));
   }, [rawData, blacklistSet]);
 
-  const ensureKpiRef = (index) => {
-    if (!kpiRefs.current[index]) {
-      kpiRefs.current[index] = { current: null };
-    }
-    return kpiRefs.current[index];
-  };
 
   const allFamilies = useMemo(() => {
     return [...new Set(dataWithBlacklist.map(d => d.familia))].filter(Boolean).sort();
@@ -575,13 +575,7 @@ export default function App() {
           { label: "Tasa global", value: `${(totalUdsRechazo / totalCascos * 100).toFixed(2)}%`, sub: `${totalUdsRechazo.toLocaleString('es-ES')} uds rechazadas`, color: COLORS.rojo, icon: AlertTriangle },
           { label: "Refs críticas", value: criticas, sub: "≤5 cascos, >50% rechazo", color: COLORS.critico, icon: AlertTriangle },
         ].map((k, i) => (
-          <div key={i} className="glass-card p-6 relative overflow-hidden group"
-            ref={(el) => {
-              const refObj = ensureKpiRef(i);
-              refObj.current = el;
-            }}
-          >
-            <CopyButton targetRef={ensureKpiRef(i)} label={`kpi-${i + 1}`} />
+          <div key={i} className="glass-card p-6 relative overflow-hidden group">
             <div className="flex justify-between items-start mb-4">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{k.label}</span>
               <k.icon className="w-5 h-5 opacity-20 group-hover:opacity-100 transition-opacity" style={{ color: k.color }} />
